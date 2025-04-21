@@ -106,7 +106,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   }
 
   puppeteerArgs.push(`--ignore-certificate-errors`);
-  const browser = await puppeteer.launch({ headless: false, args: puppeteerArgs });
+  const browser = await puppeteer.launch({ headless: true, args: puppeteerArgs });
 
   for (const baseUrl of targetUrls) {
     console.log(chalk.magentaBright(`\n🔍 Testing URL: ${baseUrl}`));
