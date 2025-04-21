@@ -1,54 +1,70 @@
 import fs from 'fs';
 import puppeteer from 'puppeteer';
 import chalk from 'chalk';
-import path from 'path';
-import { mkdir } from 'fs/promises';
 
-function checkUnique(currentParam, paramBatch, content, markerPrefix) {
-    const longerParams = paramBatch.filter(p => 
-        p.length > currentParam.length && p.includes(currentParam)
-    );
-    
-    for (const longerParam of longerParams) {
-        const longerMarker = `${markerPrefix}${longerParam}`;
-        if (content.includes(longerMarker)) {
-            return false;
-        }
+function buildUrlWithParams(baseUrl, paramGroup) {
+  const params = paramGroup.map(p => `${encodeURIComponent(p)}=testvalue`).join('&');
+  return `${baseUrl}?${params}`;
+}
+
+function splitIntoUrlSafeBatches(params, baseUrl) {
+  const MAX_URL_LENGTH = 2000;
+  const batches = [];
+  let currentBatch = [];
+  let currentLength = baseUrl.length + 1;
+
+  for (const param of params) {
+    const entry = `${encodeURIComponent(param)}=testvalue`;
+    const entryLength = entry.length + 1;
+
+    if (currentLength + entryLength > MAX_URL_LENGTH) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentLength = baseUrl.length + 1;
     }
-    
-    const currentMarker = `${markerPrefix}${currentParam}`;
-    return content.includes(currentMarker);
+
+    currentBatch.push(param);
+    currentLength += entryLength;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
 }
 
 async function findConflictParam(baseUrl, paramBatch, browser) {
-    const page = await browser.newPage();
-    let conflictParam = null;
-    
-    try {
-        if (paramBatch.length === 1) {
-            const testBatch = [paramBatch[0], 'name'];
-            const testUrl = buildUrlWithParams(baseUrl, testBatch);
-            await page.goto(testUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-            const content = await page.content();
-            
-            if (!checkUnique('name', testBatch, content, 'XSSFOUND123')) {
-                conflictParam = paramBatch[0];
-            }
-        } else {
-            const mid = Math.floor(paramBatch.length / 2);
-            const firstHalf = paramBatch.slice(0, mid);
-            const secondHalf = paramBatch.slice(mid);
-            
-            conflictParam = await findConflictParam(baseUrl, firstHalf, browser) || 
-                           await findConflictParam(baseUrl, secondHalf, browser);
-        }
-    } catch (err) {
-        console.error(chalk.yellow(`[!] Error during conflict check: ${err.message}`));
-    } finally {
-        await page.close();
+  const page = await browser.newPage();
+  let conflictParam = null;
+
+  try {
+    if (paramBatch.length === 1) {
+      const testUrl = buildUrlWithParams(baseUrl, [paramBatch[0]]);
+      const response = await page.goto(testUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
+      });
+
+      const status = response.status();
+      if (status !== 200) {
+        conflictParam = paramBatch[0];
+      }
+    } else {
+      const mid = Math.floor(paramBatch.length / 2);
+      const firstHalf = paramBatch.slice(0, mid);
+      const secondHalf = paramBatch.slice(mid);
+
+      conflictParam = await findConflictParam(baseUrl, firstHalf, browser) ||
+                      await findConflictParam(baseUrl, secondHalf, browser);
     }
-    
-    return conflictParam;
+  } catch (err) {
+    console.error(chalk.yellow(`[!] Error during conflict check: ${err.message}`));
+  } finally {
+    await page.close();
+  }
+
+  return conflictParam;
 }
 
 const args = process.argv.slice(2);
@@ -64,56 +80,16 @@ const paramFilePath = getArgValue('-pf');
 const urlFilePath = getArgValue('-uf');
 const proxyArg = getArgValue('-p');
 const workerCountArg = getArgValue('-w');
-const takeScreenshots = hasFlag('-s');
 
 const CONCURRENT_WORKERS = parseInt(workerCountArg) || 5;
-const MAX_URL_LENGTH = 2000;
-const markerPrefix = 'XSSFOUND123';
 
 if (!paramFilePath || !urlFilePath) {
-  console.error(chalk.red('Usage: node xss_param_fuzzer_headless.mjs -pf params.txt -uf urls.txt [-w 10] [-p http://127.0.0.1:8080] [-s]'));
+  console.error(chalk.red('Usage: node status_param_fuzzer_headless.mjs -pf params.txt -uf urls.txt [-w 10] [-p http://127.0.0.1:8080]'));
   process.exit(1);
 }
 
 let paramNames = fs.readFileSync(paramFilePath, 'utf-8').split(/\r?\n/).filter(Boolean);
 const targetUrls = fs.readFileSync(urlFilePath, 'utf-8').split(/\r?\n/).filter(Boolean);
-
-const buildUrlWithParams = (baseUrl, paramGroup) => {
-  const params = [...paramGroup, 'name'].map(p => `${encodeURIComponent(p)}=${markerPrefix}${p}`).join('&');
-  return `${baseUrl}?${params}`;
-};
-
-const splitIntoUrlSafeBatches = (params, baseUrl) => {
-  const batches = [];
-  let currentBatch = [];
-  let currentLength = baseUrl.length + 1;
-
-  // Account for 'name' parameter in every batch
-  const nameEntry = `${encodeURIComponent('name')}=${markerPrefix}name`;
-  currentLength += nameEntry.length + 1;
-
-  for (const param of params.filter(p => p !== 'name')) {
-    const entry = `${encodeURIComponent(param)}=${markerPrefix}${param}`;
-    const entryLength = entry.length + 1;
-
-    if (currentLength + entryLength > MAX_URL_LENGTH) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentLength = baseUrl.length + 1 + nameEntry.length + 1;
-    }
-
-    currentBatch.push(param);
-    currentLength += entryLength;
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-};
-
-const sanitize = str => str.replace(/[^a-zA-Z0-9-_]/g, '_');
 
 (async () => {
   const puppeteerArgs = [];
@@ -138,31 +114,29 @@ const sanitize = str => str.replace(/[^a-zA-Z0-9-_]/g, '_');
       const page = await browser.newPage();
       for (const paramBatch of batchGroup) {
         const testUrl = buildUrlWithParams(baseUrl, paramBatch);
-        
+
         try {
-          const response = await page.goto(testUrl, { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 15000 
+          const response = await page.goto(testUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 15000
           });
 
-          const content = await page.content();
-          let tookScreenshot = false;
-          let nameReflected = checkUnique('name', [...paramBatch, 'name'], content, markerPrefix);
+          const status = response.status();
 
-          if (nameReflected) {
-            console.log(chalk.green(`[+] 'name' reflected in batch`));
-            results.push('name');
+          if (status === 200) {
+            console.log(chalk.green(`[+] Status 200 for batch`));
           } else {
-            console.log(chalk.yellow(`[!] 'name' not reflected, checking for conflicts...`));
+            console.log(chalk.yellow(`[!] Status ${status} received, checking for conflicts...`));
+            console.log(chalk.yellow(`[i] Batch: ${paramBatch}`));
             const conflict = await findConflictParam(baseUrl, paramBatch, browser);
-            
+
             if (conflict) {
               console.log(chalk.redBright(`[!] Conflict found: ${conflict}`));
               badParams.add(conflict);
             }
           }
 
-          await new Promise(resolve => setTimeout(resolve, 650));
+          await new Promise(resolve => setTimeout(resolve, 750));
         } catch (err) {
           console.error(chalk.yellow(`[!] Error testing batch: ${err.message}`));
         }
@@ -170,7 +144,6 @@ const sanitize = str => str.replace(/[^a-zA-Z0-9-_]/g, '_');
       await page.close();
     };
 
-    // Remove bad params and retry
     if (badParams.size > 0) {
       paramNames = paramNames.filter(p => !badParams.has(p));
       batches = splitIntoUrlSafeBatches(paramNames, baseUrl);
@@ -191,12 +164,10 @@ const sanitize = str => str.replace(/[^a-zA-Z0-9-_]/g, '_');
   await browser.close();
 
   console.log(chalk.magentaBright('\n=== FINAL RESULTS ==='));
-  for (const [url, params] of Object.entries(globalResults)) {
-    if (params.length > 0) {
-      console.log(chalk.greenBright(`✅ ${url}: ${params.join(', ')}`));
-    }
+  for (const [url] of Object.entries(globalResults)) {
+    console.log(chalk.greenBright(`✅ ${url}: tested`));
   }
-  
+
   if (badParams.size > 0) {
     console.log(chalk.redBright(`\n⚠️  Conflicting parameters: ${[...badParams].join(', ')}`));
   }
