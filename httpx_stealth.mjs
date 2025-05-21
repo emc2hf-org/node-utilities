@@ -1,8 +1,13 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 import fs from 'fs/promises';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, appendFileSync } from 'fs';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 
-// CLI argument parser
+puppeteer.use(StealthPlugin());
+
+// Argument parsing
 const args = process.argv.slice(2);
 const getArg = (flag, defaultVal = null) => {
   const index = args.indexOf(flag);
@@ -18,18 +23,17 @@ const workers = parseInt(getArg('-w', '5'));
 const headless = args.includes('-hs');
 const outputFile = getArg('-o');
 
-// Validate input
 if (!file) {
   console.error('Usage: node visitLinks.mjs -l <file> [-sc] [-cl] [-ss] [-p <proxy>] [-w <workers>] [-hs] [-o <output_file>]');
   process.exit(1);
 }
 
-// Ensure screenshots directory
+// Ensure screenshots folder
 if (takeScreenshots && !existsSync('screenshots')) {
   mkdirSync('screenshots');
 }
 
-// HTML report styling and headers
+// HTML Report Template
 const htmlHeader = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,7 +46,7 @@ const htmlHeader = `<!DOCTYPE html>
     td.meta { font-family: monospace; font-size: 16px; text-align: left; white-space: pre-wrap; width: 60%; }
     td.meta strong { display: inline-block; width: 110px; color: #333; }
     td.image { text-align: center; vertical-align: middle; }
-    img { max-width: 100px; border: 1px solid #ddd; border-radius: 4px; transition: transform 0.2s; }
+    img { max-width: 200px; border: 1px solid #ddd; border-radius: 4px; transition: transform 0.2s; }
     img:hover { transform: scale(1.5); }
     a { text-decoration: none; color: #0066cc; }
   </style>
@@ -59,13 +63,19 @@ const htmlFooter = `
 </html>
 `;
 
-// Read URLs
+// Read URL list
 const urls = (await fs.readFile(file, 'utf8')).split('\n').map(u => u.trim()).filter(Boolean);
 
-// Function to visit a single URL with one page
+// Visit a single URL
 const visitUrl = async (page, url) => {
   try {
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
+
+    const response = await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: 20000
+    });
 
     const status = response.status();
     const headers = response.headers();
@@ -107,17 +117,18 @@ const visitUrl = async (page, url) => {
       await fs.appendFile('screenshots/screenshot.html', row + '\n');
     }
   } catch (err) {
-    const errMsg = `${url} [ERROR]`;
+    const errMsg = `${url} [ERROR: ${err.message}]`;
     console.log(errMsg);
     if (outputFile) appendFileSync(outputFile, errMsg + '\n');
   }
 };
 
+// Main runner
 const run = async () => {
-  if (outputFile) writeFileSync(outputFile, ''); // Clear previous output
+  if (outputFile) writeFileSync(outputFile, ''); // clear log
 
   if (takeScreenshots) {
-    await fs.writeFile('screenshots/screenshot.html', htmlHeader); // Start HTML
+    await fs.writeFile('screenshots/screenshot.html', htmlHeader); // start HTML
   }
 
   const browser = await puppeteer.launch({
@@ -136,8 +147,8 @@ const run = async () => {
 
   const worker = async (page) => {
     while (urlIndex < urls.length) {
-      const idx = urlIndex++;
-      await visitUrl(page, urls[idx]);
+      const current = urlIndex++;
+      await visitUrl(page, urls[current]);
     }
   };
 
@@ -145,7 +156,7 @@ const run = async () => {
   await browser.close();
 
   if (takeScreenshots) {
-    await fs.appendFile('screenshots/screenshot.html', htmlFooter); // Close HTML
+    await fs.appendFile('screenshots/screenshot.html', htmlFooter);
   }
 };
 
