@@ -19,8 +19,8 @@ const headless = args.includes('-hs');
 const outputFile = getArg('-o');
 
 // Validate input
-if (!file) {
-  console.error('Usage: node visitLinks.mjs -l <file> [-sc] [-cl] [-ss] [-p <proxy>] [-w <workers>] [-hs] [-o <output_file>]');
+if (!file && process.stdin.isTTY) {
+  console.error('Usage: node httpx.mjs -l <file> [OR pipe input via stdin] [-sc] [-cl] [-ss] [-p <proxy>] [-w <workers>] [-hs] [-o <output_file>]');
   process.exit(1);
 }
 
@@ -59,8 +59,24 @@ const htmlFooter = `
 </html>
 `;
 
-// Read URLs
-const urls = (await fs.readFile(file, 'utf8')).split('\n').map(u => u.trim()).filter(Boolean);
+// Read URLs from file or stdin
+//const urls = (await fs.readFile(file, 'utf8')).split('\n').map(u => u.trim()).filter(Boolean);
+let urls = [];
+
+if (file) {
+  const fileContent = await fs.readFile(file, 'utf8');
+  urls = fileContent.split('\n').map(u => u.trim()).filter(Boolean);
+} else {
+  const stdin = await new Promise((resolve, reject) => {
+    let data = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', chunk => data += chunk);
+    process.stdin.on('end', () => resolve(data));
+    process.stdin.on('error', reject);
+  });
+  urls = stdin.split('\n').map(u => u.trim()).filter(Boolean);
+}
+
 
 // Function to visit a single URL with one page
 const visitUrl = async (page, url) => {
