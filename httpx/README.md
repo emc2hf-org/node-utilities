@@ -51,3 +51,13 @@ Or via stdin:
 ```bash
 cat urls.txt | node httpx.mjs [options]
 ```
+
+## 🔮 Future Work
+- Study and implement WAF bypass techniques
+- Correct [ERROR] status requests
+- Add retry logic for timeouts or failed requests
+- Implement filtering based on status codes or content length
+
+### 🛡️ WAF Bypass Techniques (Planned)
+- Randomize User-Agent and other headers per request
+- Use stealth plugins like `puppeteer-extra-plugin-stealth`
