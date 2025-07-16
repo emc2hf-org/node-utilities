@@ -51,6 +51,18 @@ Or via stdin:
 ```bash
 cat urls.txt | node httpx.mjs [options]
 ```
+### 🧰 Arguments
+
+| Flag | Description                                                                                  |
+|----|----------------------------------------------------------------------------------------------|
+| `-l <file>` | Path to a file containing URLs (one per line). If not provided, URLs can be piped via stdin  |
+| `-sc` | Show HTTP **status code** in output                                                          |
+| `-cl` | Show **content length** for each URL                                                         |
+| `-ss` | Take **screenshots** of each page and generate an HTML report in the `screenshots/` folder   |
+| `-p <proxy>` | Optional proxy (e.g., `http://127.0.0.1:8080`)                                               |
+| `-w <workers>` | Number of concurrent **workers/pages** to use (default: 5)                                   |
+| `-hs` | Run Puppeteer in headless mode (by default it runs non-headless mode to minimize WAF blocks) |
+| `-o <output_file>` | Write raw output (status, length, etc.) to the specified file |
 
 ## 🔮 Future Work
 - Study and implement WAF bypass techniques
