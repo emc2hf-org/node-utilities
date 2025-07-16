@@ -36,6 +36,8 @@ node xss_param_fuzzer_headless.mjs -pf params.txt -uf urls.txt [-w 10] [-p http:
 | `-s`   | Save screenshots where reflections occur               |
 | `-r`   | Save HTML response where reflections occur             |
 
+---
+
 ### 2. [`bad_params.mjs`](./dom-param-fuzzer/)
 ### ⚠️ Under development
 This tool uses a binary search method to identify **"bad" parameters** (parameters that cause redirects, status code changes, or abnormal behaviors in the web application). Great for finding parameter-based WAF blocks or filters and special parameters used by the server.
@@ -59,6 +61,8 @@ node status_param_fuzzer_headless.mjs -pf params.txt -uf urls.txt [-w 10] [-p ht
 | `-uf`  | Path to list of base URLs                              |
 | `-w`   | Number of concurrent workers (default: 5)             |
 | `-p`   | Optional proxy (e.g., `http://127.0.0.1:8080`)        |
+
+---
 
 ### 3. [`httpx.mjs`](./httpx/)
 A powerful headless browser-based URL scanner built with Node.js and Puppeteer, inspired by ProjectDiscovery's [`httpx`](https://github.com/projectdiscovery/httpx).  
